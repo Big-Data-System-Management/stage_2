@@ -1,0 +1,21 @@
+services:
+  mongodb:
+    image: mongo:8.3.11
+    container_name: stage2-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  activemq:
+    image: apache/activemq-classic:6.2.0
+    container_name: stage2-activemq
+    ports:
+      - "61616:61616"
+      - "8161:8161"
+    volumes:
+      - activemq-data:/opt/apache-activemq/data
+
+volumes:
+  mongo-data:
+  activemq-data:

@@ -24,7 +24,7 @@
         <gson.version>2.11.0</gson.version>
         <slf4j.version>2.0.9</slf4j.version>
         <mongodb.version>5.5.1</mongodb.version>
-        <activemq.version>6.1.4</activemq.version>
+        <activemq.version>6.2.0</activemq.version>
         <junit.version>5.11.4</junit.version>
         <jmh.version>1.37</jmh.version>
     </properties>
