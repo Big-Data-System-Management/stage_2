@@ -1,0 +1,2 @@
+*.sh text eol=lf
+sample_dataset/** -text

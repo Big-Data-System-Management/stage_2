@@ -1,0 +1,2 @@
+### Indexing statistics
+GET http://localhost:7002/index/status

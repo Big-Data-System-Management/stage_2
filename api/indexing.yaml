@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: Indexing Service API
+  version: 0.2.0
+  description: >-
+    Operational, read-only API. Indexing work is triggered by BookDownloaded and IndexRebuildRequested
+    events (see events.yaml), not by HTTP. Draft; routes return 501 until they are implemented.
+servers:
+  - url: http://localhost:7002
+tags:
+  - name: operational
+    description: Status queries and health checks
+paths:
+  /index/status:
+    get:
+      tags: [operational]
+      summary: Indexing statistics
+      responses:
+        '200':
+          description: Statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  books_indexed: {type: integer}
+                  last_update: {type: string, format: date-time}
+                  index_size_MB: {type: number}
+  /status:
+    get:
+      tags: [operational]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Status'}
+components:
+  schemas:
+    Status:
+      type: object
+      properties:
+        service: {type: string}
+        status: {type: string, example: running}

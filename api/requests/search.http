@@ -1,0 +1,11 @@
+### Keyword search
+GET http://localhost:7003/search?q=alice
+
+### Search with filters and pagination
+GET http://localhost:7003/search?q=alice&language=en&offset=0&limit=5
+
+### Available filter values
+GET http://localhost:7003/search/filters
+
+### Book metadata
+GET http://localhost:7003/books/11

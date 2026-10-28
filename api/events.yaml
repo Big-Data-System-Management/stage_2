@@ -1,0 +1,83 @@
+asyncapi: 2.6.0
+info:
+  title: Search Engine Events
+  version: 0.1.0
+  description: |
+    Choreography contract between the services. Every event is published to an ActiveMQ virtual topic
+    (VirtualTopic.<Event>). Each consuming service reads its own queue Consumer.<group>.VirtualTopic.<Event>,
+    so every service gets one copy of each event and the replicas of a service share that copy.
+
+    Payloads are JSON text messages with snake_case fields, sent as persistent messages.
+
+    Acknowledgement: consumers use transacted sessions. The message is acknowledged only after the handler
+    finishes, together with the events the handler published. If the handler fails, the transaction is rolled
+    back: its published events are discarded and the message is redelivered.
+
+    Retries: up to MAX_REDELIVERIES (default 5) redeliveries with exponential back-off starting at
+    REDELIVERY_DELAY_MS (default 1000 ms). After that the message is moved to the dead-letter queue ActiveMQ.DLQ.
+
+    Duplicates: delivery is at least once, so every handler must be idempotent (draft rules per channel below).
+
+    Ordering: no ordering is assumed between different books.
+servers:
+  local:
+    url: tcp://localhost:61616
+    protocol: jms
+    description: ActiveMQ Classic broker on the Stage 2 host
+channels:
+  VirtualTopic.BookRequested:
+    description: |
+      A book should be ingested. Producer: feeder. Consumer group: ingestion (queue Consumer.ingestion.VirtualTopic.BookRequested).
+      Duplicates: a book already stored in the datalake is not downloaded again; BookDownloaded is published again.
+    subscribe:
+      operationId: onBookRequested
+      message: {$ref: '#/components/messages/BookRequested'}
+  VirtualTopic.BookDownloaded:
+    description: |
+      Header and body of a book are completely written in the datalake. Producer: ingestion.
+      Consumer group: indexing (queue Consumer.indexing.VirtualTopic.BookDownloaded).
+      Duplicates: reindexing a book does not duplicate postings or metadata.
+    subscribe:
+      operationId: onBookDownloaded
+      message: {$ref: '#/components/messages/BookDownloaded'}
+  VirtualTopic.BookIndexed:
+    description: |
+      The index update of a book is published and visible to search. Producer: indexing. No consumer group yet.
+    subscribe:
+      operationId: onBookIndexed
+      message: {$ref: '#/components/messages/BookIndexed'}
+  VirtualTopic.IndexRebuildRequested:
+    description: |
+      The index must be rebuilt from every book in the datalake. Producer: feeder.
+      Consumer group: indexing (queue Consumer.indexing.VirtualTopic.IndexRebuildRequested).
+    subscribe:
+      operationId: onIndexRebuildRequested
+      message: {$ref: '#/components/messages/IndexRebuildRequested'}
+components:
+  messages:
+    BookRequested:
+      contentType: application/json
+      payload:
+        type: object
+        required: [book_id]
+        properties:
+          book_id: {type: integer, example: 11}
+    BookDownloaded:
+      contentType: application/json
+      payload:
+        type: object
+        required: [book_id, path]
+        properties:
+          book_id: {type: integer, example: 11}
+          path: {type: string, example: datalake/20261028/10}
+    BookIndexed:
+      contentType: application/json
+      payload:
+        type: object
+        required: [book_id]
+        properties:
+          book_id: {type: integer, example: 11}
+    IndexRebuildRequested:
+      contentType: application/json
+      payload:
+        type: object

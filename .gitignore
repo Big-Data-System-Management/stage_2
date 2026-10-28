@@ -1,0 +1,11 @@
+# Maven build output
+target/
+
+# IntelliJ configuration
+/.idea/
+*.iml
+
+# Data generated at runtime
+/datalake/
+/benchmark/results/
+/benchmark/logs/
