@@ -36,8 +36,26 @@ Runnable HTTP requests are in [`api/requests/`](api/requests). Routes answer `50
 
 - JDK 17 or newer
 - Maven 3.9+
-- MongoDB running on `localhost:27017`
-- ActiveMQ Classic 6.x running on `localhost:61616`: download it from [activemq.apache.org](https://activemq.apache.org/components/classic/download/), unzip it and run `bin\activemq start` (web console at `http://localhost:8161`, user `admin`, password `admin`)
+- MongoDB on `localhost:27017` and ActiveMQ Classic on `localhost:61616`, started with Docker or installed manually
+
+### Option A: Docker
+
+With [Docker Desktop](https://www.docker.com/products/docker-desktop/) running, start MongoDB 8.3.11 and ActiveMQ 6.2.0 from the project folder:
+
+```bash
+docker compose up -d
+```
+
+Stop them with `docker compose down`. Data is kept in Docker volumes between runs; `docker compose down -v` deletes it.
+
+### Option B: manual installation
+
+- MongoDB Community Server from [mongodb.com](https://www.mongodb.com/try/download/community)
+- ActiveMQ Classic from [activemq.apache.org](https://activemq.apache.org/components/classic/download/): unzip it and run `bin\activemq start`
+
+Do not run both options at the same time: they use the same ports.
+
+The ActiveMQ web console is at `http://localhost:8161` (user `admin`, password `admin`).
 
 ## Build
 
@@ -49,7 +67,7 @@ Each module produces an executable jar in `<module>/target/<module>-1.0.0.jar`.
 
 ## Run
 
-Start MongoDB and ActiveMQ, then each service in its own terminal:
+Start MongoDB and ActiveMQ (for example with `docker compose up -d`), then each service in its own terminal:
 
 ```bash
 java -jar ingestion-service/target/ingestion-service-1.0.0.jar
