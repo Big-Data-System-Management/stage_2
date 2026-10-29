@@ -1,91 +1,191 @@
 openapi: 3.0.3
 info:
   title: Search Service API
-  version: 0.1.0
-  description: Front-end facing API. Draft; routes return 501 until they are implemented.
+  version: 1.0.0
+  description: |
+    Front-end facing API of the Search Service (provider: search-service, consumer: front-end).
+
+    The service only reads MongoDB. It returns books whose `status` is `published` in the `books`
+    collection; books that are still being indexed are never visible, even if the inverted index
+    already contains their identifiers.
+
+    All operations are read-only, idempotent and safe to retry. Responses are JSON with snake_case
+    field names. A book without a known publication year omits the `year` field.
+
+    CORS: every response carries `Access-Control-Allow-Origin` (setting `SEARCH_CORS_ORIGIN`,
+    default `*`), and `OPTIONS` preflight requests are answered with `204 No Content`.
 servers:
   - url: http://localhost:7003
 tags:
   - name: front-end
     description: Consumed by the front-end
   - name: operational
-    description: Health checks
+    description: Health checks, consumed by operators and scripts
 paths:
   /search:
     get:
       tags: [front-end]
       summary: Keyword search with optional filters
+      description: |
+        `q` is tokenized with the same rules as the indexer: lowercase, accents removed, stopwords and
+        one-character tokens dropped. A book matches when it contains **all** the resulting terms (AND).
+        A query whose terms are all stopwords is valid and returns no results.
+
+        Filters are optional and combinable; every filter given must match:
+        - `author`: case-insensitive partial match on the author name, taken as literal text.
+        - `language`: exact ISO 639-1 code, case-insensitive (`EN` is the same as `en`).
+        - `year`: exact publication year.
+
+        Results are ordered by `book_id` ascending, so pages are stable. `total` counts every matching
+        book, not only the returned page. An `offset` beyond `total` returns an empty page.
       parameters:
-        - {name: q, in: query, required: true, schema: {type: string, minLength: 1}}
-        - {name: author, in: query, schema: {type: string}}
-        - {name: language, in: query, schema: {type: string}}
-        - {name: year, in: query, schema: {type: integer}}
-        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
-        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - name: q
+          in: query
+          required: true
+          description: Search keywords. Blank values are rejected.
+          schema: {type: string, minLength: 1}
+          example: alice
+        - name: author
+          in: query
+          description: Case-insensitive partial match on the author. Blank means no filter.
+          schema: {type: string}
+          example: carroll
+        - name: language
+          in: query
+          description: Two-letter ISO 639-1 code, case-insensitive. Blank means no filter.
+          schema: {type: string, pattern: '^[A-Za-z]{2}$'}
+          example: en
+        - name: year
+          in: query
+          description: Exact publication year. Blank means no filter.
+          schema: {type: integer}
+          example: 1865
+        - name: offset
+          in: query
+          description: Number of matching books to skip.
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          description: Maximum number of books in the page.
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
         '200':
           description: Page of results; an empty list when nothing matches
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SearchResponse'}
-        '400': {$ref: '#/components/responses/BadRequest'}
+              examples:
+                withFilters:
+                  summary: GET /search?q=alice&language=en&offset=0&limit=2
+                  value:
+                    query: alice
+                    filters: {language: en}
+                    total: 3
+                    offset: 0
+                    limit: 2
+                    results:
+                      - {book_id: 11, title: "Alice's Adventures in Wonderland", author: Lewis Carroll, language: en, year: 1865}
+                      - {book_id: 12, title: Through the Looking-Glass, author: Lewis Carroll, language: en, year: 1871}
+                noMatches:
+                  summary: GET /search?q=dragon
+                  value: {query: dragon, filters: {}, total: 0, offset: 0, limit: 20, results: []}
+        '400':
+          description: |
+            Invalid parameters: missing or blank `q`; `year`, `offset` or `limit` not an integer;
+            `offset` below 0; `limit` outside 1..100; `language` not a two-letter code.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+              example: {error: bad_request, message: "Parameter limit must be between 1 and 100, got: 101"}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /search/filters:
     get:
       tags: [front-end]
       summary: Available filter values
+      description: Distinct languages and years of published books, sorted ascending. Books without a year are not listed.
       responses:
         '200':
           description: Filter values
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  languages: {type: array, items: {type: string}}
-                  years: {type: array, items: {type: integer}}
+              schema: {$ref: '#/components/schemas/FilterValues'}
+              example: {languages: [en, es, fr], years: [1605, 1865, 1871]}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /books/{book_id}:
     get:
       tags: [front-end]
-      summary: Metadata of one book
+      summary: Metadata of one published book
       parameters:
-        - {name: book_id, in: path, required: true, schema: {type: integer}}
+        - name: book_id
+          in: path
+          required: true
+          schema: {type: integer}
+          example: 11
       responses:
         '200':
           description: Book metadata
           content:
             application/json:
               schema: {$ref: '#/components/schemas/BookMetadata'}
-        '400': {$ref: '#/components/responses/BadRequest'}
-        '404': {$ref: '#/components/responses/NotFound'}
+              example: {book_id: 11, title: "Alice's Adventures in Wonderland", author: Lewis Carroll, language: en, year: 1865}
+        '400':
+          description: '`book_id` is not an integer'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+              example: {error: bad_request, message: "Path parameter book_id must be an integer, got: abc"}
+        '404':
+          description: The book does not exist or is not published yet
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+              example: {error: not_found, message: Book 999 was not found}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /status:
     get:
       tags: [operational]
       summary: Health check
+      description: Reports that the process is running; it does not check MongoDB.
       responses:
         '200':
           description: Service is running
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Status'}
+              example: {service: search-service, status: running}
 components:
   schemas:
     BookMetadata:
       type: object
+      required: [book_id, title, author, language]
       properties:
         book_id: {type: integer}
         title: {type: string}
         author: {type: string}
-        language: {type: string}
-        year: {type: integer, nullable: true}
+        language: {type: string, description: ISO 639-1 code}
+        year: {type: integer, description: Omitted when the publication year is unknown}
     SearchResponse:
       type: object
+      required: [query, filters, total, offset, limit, results]
       properties:
-        query: {type: string}
-        filters: {type: object, additionalProperties: true}
-        total: {type: integer}
+        query: {type: string, description: The q parameter without surrounding spaces}
+        filters:
+          type: object
+          description: Only the filters given in the request, with normalized values
+          properties:
+            author: {type: string}
+            language: {type: string}
+            year: {type: integer}
+        total: {type: integer, description: Number of matching books across all pages}
         offset: {type: integer}
         limit: {type: integer}
         results: {type: array, items: {$ref: '#/components/schemas/BookMetadata'}}
+    FilterValues:
+      type: object
+      required: [languages, years]
+      properties:
+        languages: {type: array, items: {type: string}}
+        years: {type: array, items: {type: integer}}
     Status:
       type: object
       properties:
@@ -93,17 +193,14 @@ components:
         status: {type: string, example: running}
     ApiError:
       type: object
+      required: [error, message]
       properties:
-        error: {type: string}
+        error: {type: string, enum: [bad_request, not_found, service_unavailable]}
         message: {type: string}
   responses:
-    BadRequest:
-      description: Invalid parameters
+    ServiceUnavailable:
+      description: MongoDB could not be reached; the request can be retried later
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ApiError'}
-    NotFound:
-      description: Book not found
-      content:
-        application/json:
-          schema: {$ref: '#/components/schemas/ApiError'}
+          example: {error: service_unavailable, message: Search storage is temporarily unavailable}
