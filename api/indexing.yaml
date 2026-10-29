@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Indexing Service API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
     Operational, read-only API. Indexing work is triggered by BookDownloaded and IndexRebuildRequested
-    events (see events.yaml), not by HTTP. Draft; routes return 501 until they are implemented.
+    events (see events.yaml), not by HTTP.
 servers:
   - url: http://localhost:7002
 tags:
@@ -15,6 +15,9 @@ paths:
     get:
       tags: [operational]
       summary: Indexing statistics
+      description: >-
+        Counts the published books in MongoDB, so every replica of the service returns the same values.
+        Books that are still being indexed are not counted.
       responses:
         '200':
           description: Statistics
@@ -22,10 +25,22 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [books_indexed, index_size_mb]
                 properties:
-                  books_indexed: {type: integer}
-                  last_update: {type: string, format: date-time}
-                  index_size_MB: {type: number}
+                  books_indexed:
+                    type: integer
+                    description: Number of published books
+                  last_update:
+                    type: string
+                    format: date-time
+                    description: Time the last book was published; absent when no book is published
+                  index_size_mb:
+                    type: number
+                    description: Size of the inverted index documents in MongoDB, before compression
+              example:
+                books_indexed: 15
+                last_update: '2026-10-28T19:05:00.123Z'
+                index_size_mb: 1.42
   /status:
     get:
       tags: [operational]

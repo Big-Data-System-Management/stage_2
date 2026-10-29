@@ -1,6 +1,5 @@
 package bdsm.indexing.api;
 
-import bdsm.common.http.ServiceApp;
 import bdsm.indexing.index.Datamart;
 import io.javalin.Javalin;
 
@@ -13,6 +12,6 @@ public class IndexingController {
     }
 
     public void register(Javalin app) {
-        app.get("/index/status", ServiceApp::notImplemented);
+        app.get("/index/status", ctx -> ctx.json(datamart.stats()));
     }
 }
