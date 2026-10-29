@@ -13,8 +13,10 @@ info:
     finishes, together with the events the handler published. If the handler fails, the transaction is rolled
     back: its published events are discarded and the message is redelivered.
 
-    Retries: up to MAX_REDELIVERIES (default 5) redeliveries with exponential back-off starting at
-    REDELIVERY_DELAY_MS (default 1000 ms). After that the message is moved to the dead-letter queue ActiveMQ.DLQ.
+    Retries: up to MAX_REDELIVERIES (default 5) redeliveries. The delay starts at REDELIVERY_DELAY_MS
+    (default 1000 ms) and doubles on every retry (1, 2, 4, 8 and 16 s by default). While a message waits for
+    its redelivery, the consumer keeps processing the next messages. After the last retry the message is moved
+    to the dead-letter queue ActiveMQ.DLQ.
 
     Duplicates: delivery is at least once, so every handler must be idempotent (draft rules per channel below).
 

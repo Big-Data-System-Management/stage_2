@@ -28,6 +28,8 @@ public class EventBus implements Publisher, AutoCloseable {
         policy.setInitialRedeliveryDelay(redeliveryDelayMs);
         policy.setRedeliveryDelay(redeliveryDelayMs);
         policy.setUseExponentialBackOff(redeliveryDelayMs > 0);
+        policy.setBackOffMultiplier(2);
+        factory.setNonBlockingRedelivery(true);
         connection = factory.createConnection();
         connection.start();
         publishSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
