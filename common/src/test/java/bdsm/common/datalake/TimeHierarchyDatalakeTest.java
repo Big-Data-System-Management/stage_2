@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -34,5 +35,16 @@ class TimeHierarchyDatalakeTest {
         assertTrue(reopened.exists(7));
         assertEquals(new Book(7, "Title: Y", "text"), reopened.read(7).orElseThrow());
         assertFalse(reopened.exists(8));
+    }
+
+    @Test
+    void scanAddsBooksStoredAfterTheInstanceWasCreated() throws Exception {
+        TimeHierarchyDatalake reader = new TimeHierarchyDatalake(root);
+        new TimeHierarchyDatalake(root).store(new Book(9, "h", "b"));
+        new TimeHierarchyDatalake(root).store(new Book(3, "h", "b"));
+
+        reader.scan();
+
+        assertEquals(List.of(3, 9), List.copyOf(reader.bookIds()));
     }
 }

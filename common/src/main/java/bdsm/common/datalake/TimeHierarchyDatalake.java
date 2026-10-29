@@ -10,6 +10,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
@@ -61,6 +63,15 @@ public class TimeHierarchyDatalake implements Datalake {
     public Optional<Book> read(int bookId) throws IOException {
         Path directory = bookDirectories.get(bookId);
         return directory == null ? Optional.empty() : Optional.of(readFrom(directory, bookId));
+    }
+
+    @Override
+    public SortedSet<Integer> bookIds() {
+        return new TreeSet<>(bookDirectories.keySet());
+    }
+
+    public Optional<Path> directory(int bookId) {
+        return Optional.ofNullable(bookDirectories.get(bookId));
     }
 
     public static Book readFrom(Path directory, int bookId) throws IOException {
