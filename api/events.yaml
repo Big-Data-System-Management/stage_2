@@ -13,8 +13,10 @@ info:
     finishes, together with the events the handler published. If the handler fails, the transaction is rolled
     back: its published events are discarded and the message is redelivered.
 
-    Retries: up to MAX_REDELIVERIES (default 5) redeliveries with exponential back-off starting at
-    REDELIVERY_DELAY_MS (default 1000 ms). After that the message is moved to the dead-letter queue ActiveMQ.DLQ.
+    Retries: up to MAX_REDELIVERIES (default 5) redeliveries. The delay starts at REDELIVERY_DELAY_MS
+    (default 1000 ms) and doubles on every retry (1, 2, 4, 8 and 16 s by default). While a message waits for
+    its redelivery, the consumer keeps processing the next messages. After the last retry the message is moved
+    to the dead-letter queue ActiveMQ.DLQ.
 
     Duplicates: delivery is at least once, so every handler must be idempotent (draft rules per channel below).
 
@@ -36,13 +38,19 @@ channels:
     description: |
       Header and body of a book are completely written in the datalake. Producer: ingestion.
       Consumer group: indexing (queue Consumer.indexing.VirtualTopic.BookDownloaded).
-      Duplicates: reindexing a book does not duplicate postings or metadata.
+      Processing: indexing stores the metadata with status "indexing", adds the book to the postings of its terms,
+      sets the status to "published" and then publishes BookIndexed. Search only returns published books.
+      Duplicates: a book that is already published is not indexed again; BookIndexed is published again.
+      Two copies processed at the same time do not duplicate postings or metadata (upserts and $addToSet).
+      Failures: if the book files cannot be read or MongoDB fails, the event is rolled back and redelivered;
+      postings written before the failure are not visible to search because the book is not published yet.
     subscribe:
       operationId: onBookDownloaded
       message: {$ref: '#/components/messages/BookDownloaded'}
   VirtualTopic.BookIndexed:
     description: |
       The index update of a book is published and visible to search. Producer: indexing. No consumer group yet.
+      Not published for the books processed by an index rebuild.
     subscribe:
       operationId: onBookIndexed
       message: {$ref: '#/components/messages/BookIndexed'}
@@ -50,6 +58,11 @@ channels:
     description: |
       The index must be rebuilt from every book in the datalake. Producer: feeder.
       Consumer group: indexing (queue Consumer.indexing.VirtualTopic.IndexRebuildRequested).
+      Processing: the index and the metadata are built in the staging collections inverted_index_rebuild and
+      books_rebuild, which then replace inverted_index and books. Search keeps reading the previous index until
+      the replacement. Books stored in the datalake during the rebuild are indexed afterwards.
+      Failures: the event is redelivered and the rebuild starts again from empty staging collections;
+      the previous index stays in use.
     subscribe:
       operationId: onIndexRebuildRequested
       message: {$ref: '#/components/messages/IndexRebuildRequested'}
@@ -69,7 +82,10 @@ components:
         required: [book_id, path]
         properties:
           book_id: {type: integer, example: 11}
-          path: {type: string, example: datalake/20261028/10}
+          path:
+            type: string
+            description: Folder of the book relative to the datalake root (DATALAKE_PATH)
+            example: 20261028/10
     BookIndexed:
       contentType: application/json
       payload:
