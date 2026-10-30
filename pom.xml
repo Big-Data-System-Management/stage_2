@@ -192,5 +192,11 @@
                 <benchmark.jar.phase>package</benchmark.jar.phase>
             </properties>
         </profile>
+        <profile>
+            <id>integration</id>
+            <modules>
+                <module>integration</module>
+            </modules>
+        </profile>
     </profiles>
 </project>
