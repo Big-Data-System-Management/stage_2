@@ -40,6 +40,12 @@ final class ResultWriter {
         Files.writeString(target, String.join(",", row) + "\n", StandardOpenOption.APPEND);
     }
 
+    static Map<String, Object> row(Object... pairs) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) row.put((String) pairs[i], pairs[i + 1]);
+        return row;
+    }
+
     static Statistics statistics(long[] values) {
         long[] sorted = values.clone();
         Arrays.sort(sorted);

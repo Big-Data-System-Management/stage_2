@@ -14,6 +14,10 @@ import org.apache.activemq.ActiveMQConnection;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.command.ActiveMQQueue;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -61,8 +65,15 @@ public final class PipelineProbe {
             for (Session session : sessions) session.close();
             destroyQueues(connection);
         }
-        probe.report(new ResultWriter(Path.of(options.get("out")), options.get("labels", "")), finished);
+        boolean valid = finished && probe.indexingReportsEveryBook(options.get("indexing-url", "http://localhost:7002"));
+        probe.report(new ResultWriter(Path.of(options.get("out")), options.get("labels", "")), valid);
         System.exit(0);
+    }
+
+    private boolean indexingReportsEveryBook(String indexingUrl) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(indexingUrl + "/index/status")).GET().build();
+        String body = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString()).body();
+        return JsonParser.parseString(body).getAsJsonObject().get("books_indexed").getAsInt() == books.size();
     }
 
     private static List<Integer> baseBooks(Path listing, int count) throws Exception {
@@ -105,7 +116,7 @@ public final class PipelineProbe {
                 .toArray();
     }
 
-    private void report(ResultWriter writer, boolean finished) throws Exception {
+    private void report(ResultWriter writer, boolean valid) throws Exception {
         Map<Integer, Long> requested = timestamps.get(EVENTS.get(0));
         Map<Integer, Long> done = timestamps.get(EVENTS.get(2));
         long completed = done.size();
@@ -113,19 +124,19 @@ public final class PipelineProbe {
         long last = done.values().stream().mapToLong(Long::longValue).max().orElse(first);
         double seconds = Math.max(last - first, 1) / MS_PER_SECOND;
         double booksPerSecond = completed / seconds;
-        writer.write(Map.of("benchmark", "pipeline.throughput", "metric", "thrpt", "unit", "books/s",
-                "mean", booksPerSecond, "stddev", 0.0, "samples", completed, "errors", books.size() - completed));
-        stage(writer, "pipeline.ingestion_stage", gaps(EVENTS.get(0), EVENTS.get(1)));
-        stage(writer, "pipeline.indexing_stage", gaps(EVENTS.get(1), EVENTS.get(2)));
-        stage(writer, "pipeline.end_to_end", gaps(EVENTS.get(0), EVENTS.get(2)));
-        System.out.printf(Locale.ROOT, "[probe] %d of %d books in %.1f s: %.2f books/s%s%n", completed, books.size(),
-                seconds, booksPerSecond, finished ? "" : " (timed out)");
+        writer.write(ResultWriter.row("benchmark", "pipeline.throughput", "metric", "thrpt", "unit", "books/s",
+                "mean", booksPerSecond, "stddev", 0.0, "samples", completed, "errors", books.size() - completed, "valid", valid));
+        stage(writer, "pipeline.ingestion_stage", gaps(EVENTS.get(0), EVENTS.get(1)), valid);
+        stage(writer, "pipeline.indexing_stage", gaps(EVENTS.get(1), EVENTS.get(2)), valid);
+        stage(writer, "pipeline.end_to_end", gaps(EVENTS.get(0), EVENTS.get(2)), valid);
+        System.out.printf(Locale.ROOT, "[probe] %d of %d books in %.1f s: %.2f books/s, valid=%b%n", completed, books.size(),
+                seconds, booksPerSecond, valid);
     }
 
-    private static void stage(ResultWriter writer, String name, long[] gaps) throws Exception {
+    private static void stage(ResultWriter writer, String name, long[] gaps, boolean valid) throws Exception {
         ResultWriter.Statistics statistics = ResultWriter.statistics(gaps);
-        writer.write(Map.of("benchmark", name, "metric", "avgt", "unit", "ms/book",
+        writer.write(ResultWriter.row("benchmark", name, "metric", "avgt", "unit", "ms/book",
                 "mean", statistics.mean(), "stddev", statistics.stddev(), "samples", gaps.length,
-                "p50", statistics.p50(), "p95", statistics.p95(), "p99", statistics.p99()));
+                "p50", statistics.p50(), "p95", statistics.p95(), "p99", statistics.p99(), "valid", valid));
     }
 }

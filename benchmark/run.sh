@@ -201,7 +201,7 @@ pipeline_run() {
         start_sampler "$label"
         java -cp "$INTEGRATION_JAR" bdsm.integration.load.PipelineProbe \
             --books "$BENCH_PIPELINE_BOOKS" --books-csv "${BENCH_BOOKS_CSV:-benchmark/books.csv}" \
-            --broker "$BROKER_URL" --out "$RUN_DIR/pipeline.csv" \
+            --broker "$BROKER_URL" --indexing-url "http://localhost:${INDEXING_PORT:-7002}" --out "$RUN_DIR/pipeline.csv" \
             --labels "$(stack_labels "$experiment" "$workers" "$replicas" 0 "$BENCH_PIPELINE_BOOKS" "" "prefetch=$prefetch;repeat=$repeat")"
         stop_sampler
         stop_stack
@@ -227,7 +227,7 @@ search_run() {
         java -cp "$INTEGRATION_JAR" bdsm.integration.load.LoadGenerator \
             --targets "$(search_targets "$replicas")" --users "$users" --queries benchmark/queries.txt \
             --duration-s "$BENCH_LOAD_SECONDS" --warmup-s "$BENCH_LOAD_WARMUP" --seed "$repeat" \
-            --out "$RUN_DIR/search.csv" \
+            --out "$RUN_DIR/search.csv" --check-file "$RUN_DIR/.search-check" \
             --labels "$(stack_labels "$experiment" "$threads" "$replicas" "$users" "$BENCH_SEARCH_INDEX" "$BENCH_SEARCH_INDEX" "repeat=$repeat")"
         stop_sampler
         stop_stack

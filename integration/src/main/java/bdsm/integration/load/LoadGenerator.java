@@ -1,5 +1,7 @@
 package bdsm.integration.load;
 
+import com.google.gson.JsonParser;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,7 +14,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +31,7 @@ public final class LoadGenerator {
     private final long warmupNanos;
     private final long durationNanos;
     private final long seed;
+    private final Path checkFile;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final AtomicInteger nextTarget = new AtomicInteger();
     private final AtomicLong errors = new AtomicLong();
@@ -41,6 +43,7 @@ public final class LoadGenerator {
         warmupNanos = options.getInt("warmup-s", 10) * NANOS_PER_SECOND;
         durationNanos = options.getInt("duration-s", 60) * NANOS_PER_SECOND;
         seed = options.getInt("seed", 1);
+        checkFile = Path.of(options.get("check-file"));
     }
 
     public static void main(String[] args) throws Exception {
@@ -99,18 +102,34 @@ public final class LoadGenerator {
         }
     }
 
-    private void report(ResultWriter writer, long[] nanos, double seconds) throws IOException {
+    private void report(ResultWriter writer, long[] nanos, double seconds) throws Exception {
         ResultWriter.Statistics latency = ResultWriter.statistics(nanos);
         double throughput = nanos.length / seconds;
-        writer.write(Map.of(
+        boolean valid = errors.get() == 0 && resultsMatchTheFirstRun();
+        writer.write(ResultWriter.row(
                 "benchmark", "search.latency", "metric", "avgt", "unit", "ms/op",
                 "mean", latency.mean() / NANOS_PER_MS, "stddev", latency.stddev() / NANOS_PER_MS, "samples", nanos.length,
                 "p50", latency.p50() / NANOS_PER_MS, "p95", latency.p95() / NANOS_PER_MS, "p99", latency.p99() / NANOS_PER_MS,
-                "errors", errors.get()));
-        writer.write(Map.of(
+                "errors", errors.get(), "valid", valid));
+        writer.write(ResultWriter.row(
                 "benchmark", "search.throughput", "metric", "thrpt", "unit", "ops/s",
-                "mean", throughput, "stddev", 0.0, "samples", nanos.length, "errors", errors.get()));
-        System.out.printf(Locale.ROOT, "[load] %d users: %.1f requests/s, mean %.2f ms, p95 %.2f ms, %d errors%n",
-                users, throughput, latency.mean() / NANOS_PER_MS, latency.p95() / NANOS_PER_MS, errors.get());
+                "mean", throughput, "stddev", 0.0, "samples", nanos.length, "errors", errors.get(), "valid", valid));
+        System.out.printf(Locale.ROOT, "[load] %d users: %.1f requests/s, mean %.2f ms, p95 %.2f ms, %d errors, valid=%b%n",
+                users, throughput, latency.mean() / NANOS_PER_MS, latency.p95() / NANOS_PER_MS, errors.get(), valid);
+    }
+
+    private boolean resultsMatchTheFirstRun() throws Exception {
+        long totals = 0;
+        for (String query : queries) {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(targets.get(0) + "/search?" + query))
+                    .timeout(REQUEST_TIMEOUT).GET().build();
+            String body = client.send(request, HttpResponse.BodyHandlers.ofString()).body();
+            totals += JsonParser.parseString(body).getAsJsonObject().get("total").getAsLong();
+        }
+        if (Files.notExists(checkFile)) {
+            Files.writeString(checkFile, String.valueOf(totals));
+            return true;
+        }
+        return Files.readString(checkFile).strip().equals(String.valueOf(totals));
     }
 }
