@@ -163,6 +163,118 @@ def plot_text_processing(results, info, target):
     save(figure, target, "text_processing")
 
 
+def aggregate(data, keys):
+    return data.groupby(keys, as_index=False).agg(
+        mean=("mean", "mean"), spread=("mean", "std"), p95=("p95", "mean"), errors=("errors", "sum")).fillna({"spread": 0})
+
+
+def plot_search_latency(results, info, target):
+    data = results[(results.experiment == "search-users") & (results.benchmark == "search.latency")]
+    if data.empty:
+        return
+    summary = aggregate(data, ["users"]).sort_values("users")
+    figure, axis = plt.subplots(figsize=(7, 4))
+    line(axis, summary.users, summary["mean"], summary.spread, SERIES[0], "Mean")
+    line(axis, summary.users, summary.p95, None, SERIES[1], "95th percentile")
+    axis.set_title("Search latency with more simultaneous users")
+    axis.set_xlabel("Simultaneous users")
+    axis.set_ylabel("Milliseconds per query")
+    axis.set_xticks(summary.users)
+    axis.set_ylim(bottom=0)
+    axis.legend()
+    footnote(figure, info, "Complete service, 1 replica, 32 HTTP threads, mean of the repeated runs.")
+    save(figure, target, "search_latency")
+
+
+def plot_search_throughput(results, info, target):
+    data = results[(results.experiment == "search-users") & (results.benchmark == "search.throughput")]
+    if data.empty:
+        return
+    summary = aggregate(data, ["users"]).sort_values("users")
+    figure, axis = plt.subplots(figsize=(7, 4))
+    line(axis, summary.users, summary["mean"], summary.spread, SERIES[0], None)
+    axis.set_title("Search throughput with more simultaneous users")
+    axis.set_xlabel("Simultaneous users")
+    axis.set_ylabel("Queries per second")
+    axis.set_xticks(summary.users)
+    axis.set_ylim(bottom=0)
+    footnote(figure, info, "Complete service, 1 replica, 32 HTTP threads, mean of the repeated runs.")
+    save(figure, target, "search_throughput")
+
+
+def plot_search_settings(results, info, target):
+    data = results[(results.experiment.isin(["search-threads", "search-replicas"])) & (results.benchmark == "search.latency")]
+    if data.empty:
+        return
+    summary = aggregate(data, ["experiment", "threads", "replicas"])
+    labels = [f"{row.threads} threads" if row.experiment == "search-threads" else f"{row.replicas} replicas"
+              for row in summary.itertuples()]
+    figure, axis = plt.subplots(figsize=(7, 4))
+    axis.bar(labels, summary.p95, color=SERIES[0], width=0.5)
+    axis.set_title("Search 95th percentile, changing one setting at a time")
+    axis.set_ylabel("Milliseconds per query")
+    axis.grid(axis="x", visible=False)
+    footnote(figure, info, f"{data.users.iloc[0]} simultaneous users.")
+    save(figure, target, "search_settings")
+
+
+def plot_pipeline(results, info, target):
+    data = results[results.benchmark == "pipeline.throughput"].copy()
+    if data.empty:
+        return
+    data["prefetch"] = data.params.str.extract(r"prefetch=(\w+)")[0]
+    grouped = aggregate(data, ["experiment", "threads", "replicas", "prefetch"])
+    labels = [f"{row.threads} workers, {row.replicas} replicas" + ("" if row.prefetch == "default" else f", prefetch {row.prefetch}")
+              for row in grouped.itertuples()]
+    figure, axis = plt.subplots(figsize=(8, 4.5))
+    axis.barh(labels, grouped["mean"], xerr=grouped.spread, color=SERIES[0], height=0.5, capsize=3)
+    axis.invert_yaxis()
+    axis.set_title("Books per second from request to index")
+    axis.set_xlabel("Books per second")
+    axis.grid(axis="y", visible=False)
+    footnote(figure, info, "Complete pipeline, offline book source, one factor changed at a time.")
+    save(figure, target, "pipeline_throughput")
+
+
+def plot_pipeline_stages(results, info, target):
+    data = results[(results.experiment == "pipeline-baseline") & results.benchmark.str.startswith("pipeline.") & (results.unit == "ms/book")]
+    if data.empty:
+        return
+    summary = aggregate(data, ["benchmark"])
+    names = {"pipeline.ingestion_stage": "Request to downloaded", "pipeline.indexing_stage": "Downloaded to indexed",
+             "pipeline.end_to_end": "Request to indexed"}
+    figure, axis = plt.subplots(figsize=(7, 3.6))
+    axis.barh([names[name] for name in summary.benchmark], summary["mean"] / 1000, color=SERIES[0], height=0.5)
+    axis.set_title("Average time per book in each stage, queue waiting included")
+    axis.set_xlabel("Seconds per book")
+    axis.grid(axis="y", visible=False)
+    footnote(figure, info, "Baseline configuration, from the timestamps of the broker events.")
+    save(figure, target, "pipeline_stages")
+
+
+def plot_resources(run, info, target):
+    path = run / "resources.csv"
+    if not path.exists():
+        return
+    data = pd.read_csv(path)
+    for label, group in data.groupby("label"):
+        if not label.endswith("-1"):
+            continue
+        processes = group[group.process != "host"].groupby("process")
+        figure, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+        for color, (process, rows) in zip(SERIES, processes):
+            axes[0].plot(rows.elapsed_s, rows.cpu_percent, color=color, linewidth=1.5, label=process)
+            axes[1].plot(rows.elapsed_s, rows.memory_mb, color=color, linewidth=1.5, label=process)
+        axes[0].set_title(f"CPU and memory per process: {label}")
+        axes[0].set_ylabel("CPU (% of the host)")
+        axes[1].set_ylabel("Memory (MB)")
+        axes[1].set_xlabel("Seconds")
+        axes[0].set_ylim(bottom=0)
+        axes[0].legend(ncols=4, loc="upper right")
+        footnote(figure, info, "Sampled once per second.")
+        save(figure, target, f"resources_{label}")
+
+
 def available_runs(include_smoke):
     runs = []
     for run in sorted(path for path in RESULTS_DIR.iterdir() if path.is_dir()):
@@ -172,7 +284,7 @@ def available_runs(include_smoke):
 
 
 def load(run):
-    frames = [pd.read_csv(path) for path in sorted(run.glob("*.csv"))]
+    frames = [pd.read_csv(path) for path in sorted(run.glob("*.csv")) if path.name != "resources.csv"]
     if not frames:
         raise SystemExit(f"[plot] No CSV files in {run}")
     results = pd.concat(frames, ignore_index=True)
@@ -191,8 +303,10 @@ def main():
         raise SystemExit("[plot] No benchmark results found")
     results, info = load(runs[0])
     target = PLOTS_DIR / runs[0].name
-    for plot in (plot_index_growth, plot_index_threads, plot_addtoset, plot_eventbus, plot_text_processing):
+    for plot in (plot_index_growth, plot_index_threads, plot_addtoset, plot_eventbus, plot_text_processing,
+                 plot_search_latency, plot_search_throughput, plot_search_settings, plot_pipeline, plot_pipeline_stages):
         plot(results, info, target)
+    plot_resources(runs[0], info, target)
 
 
 if __name__ == "__main__":

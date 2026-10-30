@@ -44,6 +44,7 @@ public final class BenchmarkDatabases {
         switch (args[0]) {
             case "build" -> build(Arrays.stream(args).skip(1).mapToInt(Integer::parseInt).sorted().toArray());
             case "drop" -> drop();
+            case "drop-one" -> dropOne(args[1]);
             case "version" -> version();
             default -> throw new IllegalArgumentException("Unknown command: " + args[0]);
         }
@@ -112,6 +113,12 @@ public final class BenchmarkDatabases {
     private static void version() {
         try (MongoClient client = MongoClients.create(uri())) {
             System.out.println(client.getDatabase("admin").runCommand(new Document("buildInfo", 1)).getString("version"));
+        }
+    }
+
+    private static void dropOne(String name) {
+        try (MongoClient client = MongoClients.create(uri())) {
+            client.getDatabase(named(name)).drop();
         }
     }
 

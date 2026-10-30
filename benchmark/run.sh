@@ -13,6 +13,18 @@ BENCH_THREADS_INDEX="${BENCH_THREADS_INDEX:-1000}"
 BENCH_INDEX_SIZES="${BENCH_INDEX_SIZES:-100,500,1000,2000}"
 BENCH_ONLY="${BENCH_ONLY:-}"
 BENCH_KEEP_DB="${BENCH_KEEP_DB:-false}"
+BENCH_REPEATS="${BENCH_REPEATS:-3}"
+BENCH_PIPELINE_BOOKS="${BENCH_PIPELINE_BOOKS:-200}"
+BENCH_PIPELINE_WORKERS="${BENCH_PIPELINE_WORKERS:-2 4 8}"
+BENCH_PIPELINE_REPLICAS="${BENCH_PIPELINE_REPLICAS:-2 4}"
+BENCH_SEARCH_INDEX="${BENCH_SEARCH_INDEX:-1000}"
+BENCH_USERS="${BENCH_USERS:-1 10 50}"
+BENCH_SATURATION_USERS="${BENCH_SATURATION_USERS:-50}"
+BENCH_SEARCH_THREADS="${BENCH_SEARCH_THREADS:-8 64}"
+BENCH_SEARCH_REPLICAS="${BENCH_SEARCH_REPLICAS:-2}"
+BENCH_LOAD_SECONDS="${BENCH_LOAD_SECONDS:-60}"
+BENCH_LOAD_WARMUP="${BENCH_LOAD_WARMUP:-15}"
+BROKER_URL="${BROKER_URL:-tcp://localhost:61616}"
 PYTHON="${PYTHON:-python}"
 MVN="${MVN:-mvn}"
 MONGO_HOST_PORT="${MONGO_HOST_PORT:-localhost:27017}"
@@ -21,6 +33,7 @@ BROKER_HOST_PORT="${BROKER_HOST_PORT:-localhost:61616}"
 COMMON_JAR="common/target/common-1.0.0-benchmarks.jar"
 INDEXING_JAR="indexing-service/target/indexing-service-1.0.0-benchmarks.jar"
 SEARCH_JAR="search-service/target/search-service-1.0.0-benchmarks.jar"
+INTEGRATION_JAR="integration/target/integration-1.0.0.jar"
 
 log() {
     printf '[benchmark] %s\n' "$*"
@@ -38,6 +51,7 @@ Usage: benchmark/run.sh <command>
   dataset      download the benchmark books once into benchmark/cache
   micro        run every JMH benchmark with the guide settings
   smoke        run every JMH benchmark once, only to check that it works
+  integration  run the pipeline and search load experiments with the stack
   drop-db      drop the bench_* databases
 EOF
 }
@@ -139,6 +153,120 @@ run_mongo_benchmarks() {
     fi
 }
 
+build_integration() {
+    [[ -e "$MVN" ]] || command -v "$MVN" >/dev/null || fail "Maven not found: set MVN to the mvn command"
+    log "Building the services and the load tools"
+    "$MVN" -q -B -Pbenchmark,integration -DskipTests package
+}
+
+stack_labels() {
+    local experiment="$1" threads="$2" replicas="$3" users="$4" books="$5" index_size="$6" params="$7"
+    printf 'run_id=%s,experiment=%s,threads=%s,replicas=%s,users=%s,xmx=%s,books=%s,index_size=%s,params=%s,smoke=%s' \
+        "$RUN_ID" "$experiment" "$threads" "$replicas" "$users" "$SERVICE_XMX" "$books" "$index_size" "$params" "$SMOKE"
+}
+
+start_sampler() {
+    STOP_FILE="$RUN_DIR/.stop-sampler"
+    rm -f "$STOP_FILE"
+    "$PYTHON" benchmark/sample_resources.py "$RUN_DIR/resources.csv" --stop-file "$STOP_FILE" --label "$1" &
+    SAMPLER_PID=$!
+}
+
+stop_sampler() {
+    touch "$STOP_FILE"
+    wait "$SAMPLER_PID" || true
+    rm -f "$STOP_FILE"
+}
+
+stop_stack() {
+    KEEP_INFRA=true bash scripts/stop.sh
+}
+
+drop_pipeline_data() {
+    rm -rf "$PIPELINE_DATALAKE"
+    java -cp "$INDEXING_JAR" bdsm.indexing.benchmark.BenchmarkDatabases drop-one pipeline
+}
+
+pipeline_run() {
+    local experiment="$1" workers="$2" replicas="$3" prefetch="$4" repeat label url
+    url="$BROKER_URL"
+    [[ "$prefetch" == "default" ]] || url="$BROKER_URL?jms.prefetchPolicy.queuePrefetch=$prefetch"
+    for ((repeat = 1; repeat <= BENCH_REPEATS; repeat++)); do
+        label="$experiment-w$workers-r$replicas-p$prefetch-$repeat"
+        log "Pipeline run $label"
+        drop_pipeline_data
+        BROKER_URL="$url" INDEXING_WORKERS="$workers" INDEXING_REPLICAS="$replicas" \
+            MONGO_DATABASE="$PIPELINE_DATABASE" DATALAKE_PATH="$PIPELINE_DATALAKE" BOOK_SOURCE=benchmark/cache/books \
+            STACK_LOG_DIR="$LOG_DIR/$label" INFRA=external bash scripts/start.sh ingestion indexing
+        start_sampler "$label"
+        java -cp "$INTEGRATION_JAR" bdsm.integration.load.PipelineProbe \
+            --books "$BENCH_PIPELINE_BOOKS" --books-csv "${BENCH_BOOKS_CSV:-benchmark/books.csv}" \
+            --broker "$BROKER_URL" --out "$RUN_DIR/pipeline.csv" \
+            --labels "$(stack_labels "$experiment" "$workers" "$replicas" 0 "$BENCH_PIPELINE_BOOKS" "" "prefetch=$prefetch;repeat=$repeat")"
+        stop_sampler
+        stop_stack
+    done
+}
+
+search_targets() {
+    local replicas="$1" replica targets=""
+    for ((replica = 0; replica < replicas; replica++)); do
+        targets+="${targets:+,}http://localhost:$((${SEARCH_PORT:-7003} + replica * ${PORT_STEP:-10}))"
+    done
+    echo "$targets"
+}
+
+search_run() {
+    local experiment="$1" threads="$2" replicas="$3" users="$4" repeat label
+    for ((repeat = 1; repeat <= BENCH_REPEATS; repeat++)); do
+        label="$experiment-t$threads-r$replicas-u$users-$repeat"
+        log "Search run $label"
+        SEARCH_HTTP_THREADS="$threads" SEARCH_REPLICAS="$replicas" MONGO_DATABASE="bench_index_$BENCH_SEARCH_INDEX" \
+            STACK_LOG_DIR="$LOG_DIR/$label" INFRA=external bash scripts/start.sh search
+        start_sampler "$label"
+        java -cp "$INTEGRATION_JAR" bdsm.integration.load.LoadGenerator \
+            --targets "$(search_targets "$replicas")" --users "$users" --queries benchmark/queries.txt \
+            --duration-s "$BENCH_LOAD_SECONDS" --warmup-s "$BENCH_LOAD_WARMUP" --seed "$repeat" \
+            --out "$RUN_DIR/search.csv" \
+            --labels "$(stack_labels "$experiment" "$threads" "$replicas" "$users" "$BENCH_SEARCH_INDEX" "$BENCH_SEARCH_INDEX" "repeat=$repeat")"
+        stop_sampler
+        stop_stack
+    done
+}
+
+run_integration_experiments() {
+    local value
+    if [[ -z "$BENCH_ONLY" || "pipeline" =~ $BENCH_ONLY ]]; then
+        pipeline_run pipeline-baseline 1 1 default
+        for value in $BENCH_PIPELINE_WORKERS; do pipeline_run pipeline-workers "$value" 1 default; done
+        for value in $BENCH_PIPELINE_REPLICAS; do pipeline_run pipeline-replicas 1 "$value" default; done
+        pipeline_run pipeline-prefetch 1 "$(echo "$BENCH_PIPELINE_REPLICAS" | cut -d' ' -f1)" 1
+    fi
+    if [[ -z "$BENCH_ONLY" || "search" =~ $BENCH_ONLY ]]; then
+        java "-Xmx$BENCH_XMX" -cp "$INDEXING_JAR" bdsm.indexing.benchmark.BenchmarkDatabases build "$BENCH_SEARCH_INDEX"
+        for value in $BENCH_USERS; do search_run search-users 32 1 "$value"; done
+        for value in $BENCH_SEARCH_THREADS; do search_run search-threads "$value" 1 "$BENCH_SATURATION_USERS"; done
+        for value in $BENCH_SEARCH_REPLICAS; do search_run search-replicas 32 "$value" "$BENCH_SATURATION_USERS"; done
+    fi
+}
+
+run_integration() {
+    require_tools
+    require_dataset
+    build_integration
+    port_open "$MONGO_HOST_PORT" || fail "No MongoDB on $MONGO_HOST_PORT"
+    port_open "$BROKER_HOST_PORT" || fail "No broker on $BROKER_HOST_PORT"
+    SMOKE=false
+    SERVICE_XMX="${SERVICE_XMX:-2G}"
+    export SERVICE_XMX
+    PIPELINE_DATABASE="bench_pipeline"
+    PIPELINE_DATALAKE="benchmark/tmp/pipeline/datalake"
+    start_run integration
+    trap 'stop_stack; drop_databases' EXIT
+    run_integration_experiments
+    log "Done: $RUN_DIR"
+}
+
 run_micro() {
     require_tools
     require_dataset
@@ -175,6 +303,7 @@ case "${1:-}" in
     dataset) "$PYTHON" -I benchmark/dataset.py ;;
     micro) run_micro ;;
     smoke) run_smoke ;;
+    integration) run_integration ;;
     drop-db) drop_databases ;;
     *) usage; exit 1 ;;
 esac
