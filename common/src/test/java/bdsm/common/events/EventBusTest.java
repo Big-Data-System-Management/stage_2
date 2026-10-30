@@ -1,5 +1,10 @@
 package bdsm.common.events;
 
+import jakarta.jms.Connection;
+import jakarta.jms.Message;
+import jakarta.jms.Session;
+import jakarta.jms.TextMessage;
+import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.broker.BrokerService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,5 +79,52 @@ class EventBusTest {
         Thread.sleep(300);
         assertEquals(2, attempts.get());
         assertEquals(List.of(7), published);
+    }
+
+    @Test
+    void retriesWithDoublingDelaysAndThenMovesTheEventToTheDeadLetterQueue() throws Exception {
+        List<Long> attempts = new CopyOnWriteArrayList<>();
+        try (EventBus retrying = new EventBus("vm://test?create=false", 3, 100)) {
+            retrying.subscribe(BookDownloaded.class, "indexing", 1, (event, publisher) -> {
+                attempts.add(System.nanoTime());
+                throw new IllegalStateException("always fails");
+            });
+            retrying.publish(new BookDownloaded(1, "20261029/10"));
+
+            assertEquals("{\"book_id\":1,\"path\":\"20261029/10\"}", receiveFromDeadLetterQueue());
+        }
+        assertEquals(4, attempts.size());
+        for (int retry = 1; retry < attempts.size(); retry++) {
+            long gapMs = (attempts.get(retry) - attempts.get(retry - 1)) / 1_000_000;
+            long expectedMs = 100L << (retry - 1);
+            assertTrue(gapMs >= expectedMs - 20 && gapMs < expectedMs * 2, "retry " + retry + " after " + gapMs + " ms");
+        }
+    }
+
+    @Test
+    void anEventWaitingForRedeliveryDoesNotBlockTheNextOnes() throws Exception {
+        CountDownLatch otherProcessed = new CountDownLatch(1);
+        try (EventBus retrying = new EventBus("vm://test?create=false", 3, 2000)) {
+            retrying.subscribe(BookDownloaded.class, "indexing", 1, (event, publisher) -> {
+                if (event.bookId() == 1) throw new IllegalStateException("always fails");
+                otherProcessed.countDown();
+            });
+            retrying.publish(new BookDownloaded(1, "a"));
+            retrying.publish(new BookDownloaded(2, "b"));
+
+            assertTrue(otherProcessed.await(1, TimeUnit.SECONDS));
+        }
+    }
+
+    private static String receiveFromDeadLetterQueue() throws Exception {
+        Connection connection = new ActiveMQConnectionFactory("vm://test?create=false").createConnection();
+        try {
+            connection.start();
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            Message message = session.createConsumer(session.createQueue("ActiveMQ.DLQ")).receive(5000);
+            return message == null ? null : ((TextMessage) message).getText();
+        } finally {
+            connection.close();
+        }
     }
 }
