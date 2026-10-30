@@ -50,13 +50,16 @@ public final class PipelineProbe {
         boolean finished;
         try (Connection connection = factory.createConnection()) {
             connection.start();
-            for (String event : EVENTS) probe.listen(connection, event);
+            destroyQueues(connection);
+            List<Session> sessions = new ArrayList<>();
+            for (String event : EVENTS) sessions.add(probe.listen(connection, event));
             try (EventBus bus = new EventBus(brokerUrl, 0, 0)) {
                 for (int book : books) bus.publish(new BookRequested(book));
             }
             System.out.printf("[probe] Requested %d books%n", books.size());
             finished = probe.indexed.await(options.getInt("timeout-s", 3600), TimeUnit.SECONDS);
-            for (String event : EVENTS) ((ActiveMQConnection) connection).destroyDestination(new ActiveMQQueue(queue(event)));
+            for (Session session : sessions) session.close();
+            destroyQueues(connection);
         }
         probe.report(new ResultWriter(Path.of(options.get("out")), options.get("labels", "")), finished);
         System.exit(0);
@@ -75,9 +78,14 @@ public final class PipelineProbe {
         return "Consumer." + GROUP + ".VirtualTopic." + event;
     }
 
-    private void listen(Connection connection, String event) throws JMSException {
+    private static void destroyQueues(Connection connection) throws JMSException {
+        for (String event : EVENTS) ((ActiveMQConnection) connection).destroyDestination(new ActiveMQQueue(queue(event)));
+    }
+
+    private Session listen(Connection connection, String event) throws JMSException {
         Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
         session.createConsumer(session.createQueue(queue(event))).setMessageListener(message -> record(event, message));
+        return session;
     }
 
     private void record(String event, Message message) {
