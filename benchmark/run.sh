@@ -140,7 +140,6 @@ run_mongo_benchmarks() {
     local sizes
     sizes="$(printf '%s,%s' "$BENCH_INDEX_SIZES" "$BENCH_THREADS_INDEX" | tr ',' '\n' | sort -nu | tr '\n' ' ')"
     log "Building the base indexes: $sizes"
-    # shellcheck disable=SC2086
     java "-Xmx$BENCH_XMX" -cp "$INDEXING_JAR" bdsm.indexing.benchmark.BenchmarkDatabases build $sizes
     jmh addtoset "$INDEXING_JAR" 'AddToSetBenchmark' $TIMING
     jmh index-growth "$INDEXING_JAR" 'IndexingBatchBenchmark.updateDatamart' -p threads=1 -p "indexSize=$BENCH_INDEX_SIZES"
