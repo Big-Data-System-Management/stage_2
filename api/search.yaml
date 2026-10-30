@@ -10,7 +10,8 @@ info:
     already contains their identifiers.
 
     All operations are read-only, idempotent and safe to retry. Responses are JSON with snake_case
-    field names. A book without a known publication year omits the `year` field.
+    field names. A book without a known language or publication year omits the `language` or
+    `year` field.
 
     CORS: every response carries `Access-Control-Allow-Origin` (setting `SEARCH_CORS_ORIGIN`,
     default `*`), and `OPTIONS` preflight requests are answered with `204 No Content`.
@@ -102,7 +103,7 @@ paths:
     get:
       tags: [front-end]
       summary: Available filter values
-      description: Distinct languages and years of published books, sorted ascending. Books without a year are not listed.
+      description: Distinct languages and years of published books, sorted ascending. Unknown languages and years are not listed.
       responses:
         '200':
           description: Filter values
@@ -157,12 +158,12 @@ components:
   schemas:
     BookMetadata:
       type: object
-      required: [book_id, title, author, language]
+      required: [book_id, title, author]
       properties:
         book_id: {type: integer}
-        title: {type: string}
-        author: {type: string}
-        language: {type: string, description: ISO 639-1 code}
+        title: {type: string, description: '"Unknown" when the header has no title'}
+        author: {type: string, description: '"Unknown" when the header has no author'}
+        language: {type: string, description: ISO 639-1 code; omitted when the language is unknown}
         year: {type: integer, description: Omitted when the publication year is unknown}
     SearchResponse:
       type: object
