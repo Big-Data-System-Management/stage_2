@@ -203,18 +203,23 @@ def plot_search_throughput(results, info, target):
 
 
 def plot_search_settings(results, info, target):
-    data = results[(results.experiment.isin(["search-threads", "search-replicas"])) & (results.benchmark == "search.latency")]
-    if data.empty:
+    latency = results[results.benchmark == "search.latency"]
+    changed = latency[latency.experiment.isin(["search-threads", "search-replicas"])]
+    if changed.empty:
         return
-    summary = aggregate(data, ["experiment", "threads", "replicas"])
-    labels = [f"{row.threads} threads" if row.experiment == "search-threads" else f"{row.replicas} replicas"
-              for row in summary.itertuples()]
-    figure, axis = plt.subplots(figsize=(7, 4))
-    axis.bar(labels, summary.p95, color=SERIES[0], width=0.5)
+    users = changed.users.iloc[0]
+    baseline = latency[(latency.experiment == "search-users") & (latency.users == users)]
+    summary = aggregate(pd.concat([baseline, changed]), ["experiment", "threads", "replicas"])
+    names = {"search-users": "Baseline: {threads} threads, {replicas} replica",
+             "search-threads": "{threads} threads", "search-replicas": "{replicas} replicas"}
+    labels = [names[row.experiment].format(threads=row.threads, replicas=row.replicas) for row in summary.itertuples()]
+    figure, axis = plt.subplots(figsize=(8, 4))
+    axis.barh(labels, summary.p95, color=SERIES[0], height=0.5)
+    axis.invert_yaxis()
     axis.set_title("Search 95th percentile, changing one setting at a time")
-    axis.set_ylabel("Milliseconds per query")
-    axis.grid(axis="x", visible=False)
-    footnote(figure, info, f"{data.users.iloc[0]} simultaneous users.")
+    axis.set_xlabel("Milliseconds per query")
+    axis.grid(axis="y", visible=False)
+    footnote(figure, info, f"{users} simultaneous users.")
     save(figure, target, "search_settings")
 
 
@@ -260,17 +265,23 @@ def plot_resources(run, info, target):
     for label, group in data.groupby("label"):
         if not label.endswith("-1"):
             continue
+        host = group[group.process == "host"]
         processes = group[group.process != "host"].groupby("process")
-        figure, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
-        for color, (process, rows) in zip(SERIES, processes):
+        figure, axes = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
+        axes[0].plot(host.elapsed_s, host.cpu_percent, color=SECONDARY_INK, linewidth=1.5, label="whole host")
+        for color, (process, rows) in zip(SERIES * 2, processes):
             axes[0].plot(rows.elapsed_s, rows.cpu_percent, color=color, linewidth=1.5, label=process)
             axes[1].plot(rows.elapsed_s, rows.memory_mb, color=color, linewidth=1.5, label=process)
-        axes[0].set_title(f"CPU and memory per process: {label}")
+        axes[2].plot(host.elapsed_s, host.memory_mb / 1024, color=SECONDARY_INK, linewidth=1.5)
+        axes[0].set_title(f"CPU and memory: {label}")
         axes[0].set_ylabel("CPU (% of the host)")
-        axes[1].set_ylabel("Memory (MB)")
-        axes[1].set_xlabel("Seconds")
+        axes[1].set_ylabel("Process memory (MB)")
+        axes[2].set_ylabel("Host memory used (GB)")
+        axes[2].set_xlabel("Seconds")
         axes[0].set_ylim(bottom=0)
-        axes[0].legend(ncols=4, loc="upper right")
+        axes[1].set_ylim(bottom=0)
+        axes[2].set_ylim(bottom=0)
+        axes[0].legend(loc="upper left", bbox_to_anchor=(1.01, 1))
         footnote(figure, info, "Sampled once per second.")
         save(figure, target, f"resources_{label}")
 
