@@ -145,4 +145,13 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <profiles>
+        <profile>
+            <id>integration</id>
+            <modules>
+                <module>integration</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
