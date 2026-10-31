@@ -9,3 +9,10 @@ target/
 /datalake/
 /benchmark/results/
 /benchmark/logs/
+/benchmark/cache/
+/benchmark/plots/
+/benchmark/run/
+/benchmark/tmp/
+
+# Python cache
+__pycache__/
