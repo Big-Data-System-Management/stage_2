@@ -7,6 +7,10 @@ info:
     (VirtualTopic.<Event>). Each consuming service reads its own queue Consumer.<group>.VirtualTopic.<Event>,
     so every service gets one copy of each event and the replicas of a service share that copy.
 
+    Work sharing: each consumer reserves one message at a time (QUEUE_PREFETCH, default 1), so the replicas and
+    worker threads of a service share the queue evenly, including replicas that connect after the events were
+    published.
+
     Payloads are JSON text messages with snake_case fields, sent as persistent messages.
 
     Acknowledgement: consumers use transacted sessions. The message is acknowledged only after the handler
