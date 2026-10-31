@@ -99,7 +99,7 @@ def plot_index_threads(results, info, target):
     axis.set_xticks(sorted(data.threads.unique()))
     axis.set_ylim(bottom=0)
     axis.legend()
-    footnote(figure, info, f"Index of {data.index_size.iloc[0]} books, same 20-book batch in every configuration.")
+    footnote(figure, info, f"Index of {int(data.index_size.iloc[0])} books, same 20-book batch in every configuration.")
     save(figure, target, "index_threads")
 
 
