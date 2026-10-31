@@ -229,7 +229,7 @@ def plot_pipeline(results, info, target):
         return
     data["prefetch"] = data.params.str.extract(r"prefetch=(\w+)")[0]
     grouped = aggregate(data, ["experiment", "threads", "replicas", "prefetch"])
-    labels = [f"{row.threads} workers, {row.replicas} replicas" + ("" if row.prefetch == "default" else f", prefetch {row.prefetch}")
+    labels = [f"{row.threads} workers, {row.replicas} replicas" + ("" if row.prefetch == "1" else f", prefetch {row.prefetch}")
               for row in grouped.itertuples()]
     figure, axis = plt.subplots(figsize=(8, 4.5))
     axis.barh(labels, grouped["mean"], xerr=grouped.spread, color=SERIES[0], height=0.5, capsize=3)

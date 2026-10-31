@@ -17,6 +17,7 @@ BENCH_REPEATS="${BENCH_REPEATS:-3}"
 BENCH_PIPELINE_BOOKS="${BENCH_PIPELINE_BOOKS:-200}"
 BENCH_PIPELINE_WORKERS="${BENCH_PIPELINE_WORKERS:-2 4 8}"
 BENCH_PIPELINE_REPLICAS="${BENCH_PIPELINE_REPLICAS:-2 4}"
+BENCH_PIPELINE_PREFETCH="${BENCH_PIPELINE_PREFETCH:-1000}"
 BENCH_SEARCH_INDEX="${BENCH_SEARCH_INDEX:-1000}"
 BENCH_USERS="${BENCH_USERS:-1 10 50}"
 BENCH_SATURATION_USERS="${BENCH_SATURATION_USERS:-50}"
@@ -187,14 +188,12 @@ drop_pipeline_data() {
 }
 
 pipeline_run() {
-    local experiment="$1" workers="$2" replicas="$3" prefetch="$4" repeat label url
-    url="$BROKER_URL"
-    [[ "$prefetch" == "default" ]] || url="$BROKER_URL?jms.prefetchPolicy.queuePrefetch=$prefetch"
+    local experiment="$1" workers="$2" replicas="$3" prefetch="$4" repeat label
     for ((repeat = 1; repeat <= BENCH_REPEATS; repeat++)); do
         label="$experiment-w$workers-r$replicas-p$prefetch-$repeat"
         log "Pipeline run $label"
         drop_pipeline_data
-        BROKER_URL="$url" INDEXING_WORKERS="$workers" INDEXING_REPLICAS="$replicas" \
+        BROKER_URL="$BROKER_URL" QUEUE_PREFETCH="$prefetch" INDEXING_WORKERS="$workers" INDEXING_REPLICAS="$replicas" \
             MONGO_DATABASE="$PIPELINE_DATABASE" DATALAKE_PATH="$PIPELINE_DATALAKE" BOOK_SOURCE=benchmark/cache/books \
             STACK_LOG_DIR="$LOG_DIR/$label" INFRA=external bash scripts/start.sh ingestion indexing
         start_sampler "$label"
@@ -236,10 +235,10 @@ search_run() {
 run_integration_experiments() {
     local value
     if [[ -z "$BENCH_ONLY" || "pipeline" =~ $BENCH_ONLY ]]; then
-        pipeline_run pipeline-baseline 1 1 default
-        for value in $BENCH_PIPELINE_WORKERS; do pipeline_run pipeline-workers "$value" 1 default; done
-        for value in $BENCH_PIPELINE_REPLICAS; do pipeline_run pipeline-replicas 1 "$value" default; done
-        pipeline_run pipeline-prefetch 1 "$(echo "$BENCH_PIPELINE_REPLICAS" | cut -d' ' -f1)" 1
+        pipeline_run pipeline-baseline 1 1 1
+        for value in $BENCH_PIPELINE_WORKERS; do pipeline_run pipeline-workers "$value" 1 1; done
+        for value in $BENCH_PIPELINE_REPLICAS; do pipeline_run pipeline-replicas 1 "$value" 1; done
+        pipeline_run pipeline-prefetch 1 "$(echo "$BENCH_PIPELINE_REPLICAS" | cut -d' ' -f1)" "$BENCH_PIPELINE_PREFETCH"
     fi
     if [[ -z "$BENCH_ONLY" || "search" =~ $BENCH_ONLY ]]; then
         java "-Xmx$BENCH_XMX" -cp "$INDEXING_JAR" bdsm.indexing.benchmark.BenchmarkDatabases build "$BENCH_SEARCH_INDEX"
