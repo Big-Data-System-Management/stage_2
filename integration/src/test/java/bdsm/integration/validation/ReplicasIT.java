@@ -6,7 +6,6 @@ import bdsm.integration.support.Await;
 import bdsm.integration.support.Broker;
 import bdsm.integration.support.Datamart;
 import bdsm.integration.support.Library;
-import bdsm.integration.support.Settings;
 import bdsm.integration.support.Stack;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,9 +30,7 @@ class ReplicasIT {
     @BeforeAll
     static void startTwoIndexingReplicas() throws Exception {
         Stack.stop("indexing");
-        Stack.start("indexing", Map.of(
-                "INDEXING_REPLICAS", "2",
-                "BROKER_URL", Settings.BROKER_URL + "?jms.prefetchPolicy.queuePrefetch=1"));
+        Stack.start("indexing", Map.of("INDEXING_REPLICAS", "2"));
     }
 
     @AfterAll

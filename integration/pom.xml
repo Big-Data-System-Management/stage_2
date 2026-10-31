@@ -12,6 +12,10 @@
 
     <artifactId>integration</artifactId>
 
+    <properties>
+        <main.class>bdsm.integration.load.LoadGenerator</main.class>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>bdsm.stage2</groupId>
@@ -42,6 +46,10 @@
                     <runOrder>alphabetical</runOrder>
                     <trimStackTrace>true</trimStackTrace>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
