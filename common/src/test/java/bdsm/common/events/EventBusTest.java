@@ -116,6 +116,29 @@ class EventBusTest {
         }
     }
 
+    @Test
+    void aReplicaThatConnectsLaterStillGetsPartOfTheWork() throws Exception {
+        int events = 20;
+        CountDownLatch done = new CountDownLatch(events);
+        AtomicInteger late = new AtomicInteger();
+        bus.subscribe(BookDownloaded.class, "indexing", 1, (event, publisher) -> {
+            Thread.sleep(50);
+            done.countDown();
+        });
+        for (int book = 0; book < events; book++) bus.publish(new BookDownloaded(book, "p"));
+        Thread.sleep(100);
+        try (EventBus replica = new EventBus("vm://test?create=false", 2, 0)) {
+            replica.subscribe(BookDownloaded.class, "indexing", 1, (event, publisher) -> {
+                Thread.sleep(50);
+                late.incrementAndGet();
+                done.countDown();
+            });
+
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+        }
+        assertTrue(late.get() >= events / 4, "the late replica processed " + late.get() + " of " + events);
+    }
+
     private static String receiveFromDeadLetterQueue() throws Exception {
         Connection connection = new ActiveMQConnectionFactory("vm://test?create=false").createConnection();
         try {
