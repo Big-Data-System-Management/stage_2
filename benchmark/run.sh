@@ -147,7 +147,7 @@ run_mongo_benchmarks() {
     jmh index-threads "$INDEXING_JAR" 'IndexingBatchBenchmark.updateDatamart' -p "threads=$BENCH_THREADS" -p "indexSize=$BENCH_THREADS_INDEX"
     jmh index-handler "$INDEXING_JAR" 'IndexingBatchBenchmark.handleBookDownloaded' -p "threads=$BENCH_THREADS" -p "indexSize=$BENCH_THREADS_INDEX"
     if [[ -f "$SEARCH_JAR" ]]; then
-        jmh search "$SEARCH_JAR" 'SearchBenchmark' $TIMING
+        jmh search "$SEARCH_JAR" 'SearchBenchmark' -p "indexSize=$BENCH_INDEX_SIZES" $TIMING
     else
         log "No search benchmarks in this build: skipping search"
     fi

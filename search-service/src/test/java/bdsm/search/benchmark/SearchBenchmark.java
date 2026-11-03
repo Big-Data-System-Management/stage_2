@@ -51,6 +51,9 @@ public class SearchBenchmark {
     public void connect() {
         client = MongoClients.create(Config.get("MONGO_URI", "mongodb://localhost:27017"));
         service = new SearchService(new MongoBookRepository(client.getDatabase("bench_index_" + indexSize)), new Tokenizer());
+        if (service.search(SearchQuery.from(COMMON_TERM, null, null, null, null, null)).total() == 0) {
+            throw new IllegalStateException("No books match \"" + COMMON_TERM + "\" in bench_index_" + indexSize);
+        }
         query = switch (search) {
             case "rare" -> SearchQuery.from(RARE_TERM, null, null, null, null, null);
             case "common" -> SearchQuery.from(COMMON_TERM, null, null, null, null, null);
