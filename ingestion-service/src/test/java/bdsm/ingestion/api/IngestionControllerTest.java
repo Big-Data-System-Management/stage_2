@@ -24,6 +24,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class IngestionControllerTest {
 
+    private static final int TEST_THREADS = 8;
+    private static final String SERVICE_NAME = "ingestion-service-test";
+    private static final String INGEST_STATUS_PATH = "/ingest/status/";
+    private static final String INGEST_LIST_PATH = "/ingest/list";
+
     @TempDir
     Path root;
 
@@ -32,7 +37,7 @@ class IngestionControllerTest {
 
     @BeforeEach
     void startServer() throws Exception {
-        app = ServiceApp.create("ingestion-service-test", 4);
+        app = ServiceApp.create(SERVICE_NAME, TEST_THREADS);
         new IngestionController(new TimeHierarchyBookLocator(root)).register(app);
         app.start(0);
     }
@@ -53,13 +58,15 @@ class IngestionControllerTest {
 
     @Test
     void reportsABookStoredAfterTheServiceStartedAsAvailable() throws Exception {
-        assertEquals("missing", json(get("/ingest/status/3")).get("status").getAsString());
+        int specificBookId = 3;
 
-        new TimeHierarchyDatalake(root).store(new Book(3, "Title: X", "text"));
+        assertEquals("missing", json(get(INGEST_STATUS_PATH + specificBookId)).get("status").getAsString());
 
-        HttpResponse<String> response = get("/ingest/status/3");
+        new TimeHierarchyDatalake(root).store(new Book(specificBookId, "Title: X", "text"));
+
+        HttpResponse<String> response = get(INGEST_STATUS_PATH + specificBookId);
         assertEquals(200, response.statusCode());
-        assertEquals(3, json(response).get("book_id").getAsInt());
+        assertEquals(specificBookId, json(response).get("book_id").getAsInt());
         assertEquals("available", json(response).get("status").getAsString());
     }
 
@@ -69,7 +76,7 @@ class IngestionControllerTest {
         datalake.store(new Book(12, "h", "b"));
         datalake.store(new Book(2, "h", "b"));
 
-        JsonObject body = json(get("/ingest/list"));
+        JsonObject body = json(get(INGEST_LIST_PATH));
 
         assertEquals(2, body.get("count").getAsInt());
         assertEquals("[2,12]", body.get("books").toString());
@@ -77,27 +84,27 @@ class IngestionControllerTest {
 
     @Test
     void doesNotCountABookWhoseBodyIsMissing() throws Exception {
+        int specificBookId = 4;
         Path directory = Files.createDirectories(root.resolve("20261028").resolve("10"));
-        Files.writeString(directory.resolve("4.header.txt"), "Title: X");
+        Files.writeString(directory.resolve(specificBookId + ".header.txt"), "Title: X");
 
-        assertEquals("missing", json(get("/ingest/status/4")).get("status").getAsString());
-        assertEquals(0, json(get("/ingest/list")).get("count").getAsInt());
+        assertEquals("missing", json(get(INGEST_STATUS_PATH + specificBookId)).get("status").getAsString());
+        assertEquals(0, json(get(INGEST_LIST_PATH)).get("count").getAsInt());
     }
 
     @Test
     void listsNothingWhenTheDatalakeIsEmpty() throws Exception {
-        JsonObject body = json(get("/ingest/list"));
-
+        JsonObject body = json(get(INGEST_LIST_PATH));
         assertEquals(0, body.get("count").getAsInt());
         assertEquals("[]", body.get("books").toString());
     }
 
     @Test
     void rejectsABookIdThatIsNotANumber() throws Exception {
-        HttpResponse<String> response = get("/ingest/status/abc");
+        HttpResponse<String> response = get(INGEST_STATUS_PATH + "abc");
 
         assertEquals(400, response.statusCode());
         assertTrue(json(response).get("message").getAsString().contains("book_id"));
-        assertEquals(400, get("/ingest/status/0").statusCode());
+        assertEquals(400, get(INGEST_STATUS_PATH + "0").statusCode());
     }
 }
