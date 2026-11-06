@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Ingestion Service API
-  version: 0.2.0
+  version: 1.0.0
   description: >-
     Operational, read-only API. Ingestion work is triggered by BookRequested events (see events.yaml),
-    not by HTTP. Draft; routes return 501 until they are implemented.
+    not by HTTP.
 servers:
   - url: http://localhost:7001
 tags:
@@ -16,7 +16,7 @@ paths:
       tags: [operational]
       summary: Whether a book is in the datalake
       parameters:
-        - {name: book_id, in: path, required: true, schema: {type: integer}}
+        - {name: book_id, in: path, required: true, schema: {type: integer, minimum: 1}}
       responses:
         '200':
           description: Ingestion status
