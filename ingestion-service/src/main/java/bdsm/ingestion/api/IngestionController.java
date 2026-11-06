@@ -3,7 +3,6 @@ package bdsm.ingestion.api;
 import bdsm.ingestion.storage.BookLocator;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.util.List;
@@ -48,7 +47,6 @@ public class IngestionController {
         return parseBookId(rawBookIdValue);
     }
 
-    @NotNull
     private String getBookStatus(int bookId) throws IOException {
         return locator.find(bookId).isPresent()
                 ? BOOK_STATUS_AVAILABLE
