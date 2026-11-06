@@ -32,6 +32,7 @@ MONGO_HOST_PORT="${MONGO_HOST_PORT:-localhost:27017}"
 BROKER_HOST_PORT="${BROKER_HOST_PORT:-localhost:61616}"
 
 COMMON_JAR="common/target/common-1.0.0-benchmarks.jar"
+INGESTION_JAR="ingestion-service/target/ingestion-service-1.0.0-benchmarks.jar"
 INDEXING_JAR="indexing-service/target/indexing-service-1.0.0-benchmarks.jar"
 SEARCH_JAR="search-service/target/search-service-1.0.0-benchmarks.jar"
 INTEGRATION_JAR="integration/target/integration-1.0.0.jar"
@@ -68,7 +69,7 @@ require_tools() {
 }
 
 build_jars() {
-    if [[ -f "$COMMON_JAR" && -f "$INDEXING_JAR" && "${BENCH_REBUILD:-false}" != "true" ]]; then
+    if [[ -f "$COMMON_JAR" && -f "$INGESTION_JAR" && -f "$INDEXING_JAR" && "${BENCH_REBUILD:-false}" != "true" ]]; then
         return
     fi
     [[ -e "$MVN" ]] || command -v "$MVN" >/dev/null || fail "Maven not found: set MVN to the mvn command"
@@ -124,6 +125,7 @@ start_run() {
 run_cpu_benchmarks() {
     jmh tokenizer "$COMMON_JAR" 'TokenizerBenchmark' -t 1 $TIMING
     jmh metadata "$INDEXING_JAR" 'MetadataExtractorBenchmark' -t 1 $TIMING
+    jmh splitter "$INGESTION_JAR" 'GutenbergSplitterBenchmark' -t 1 $TIMING
     jmh eventbus-embedded "$COMMON_JAR" 'EventBusBenchmark' -p broker=embedded -p consumers=1,2,4 $TIMING
     if port_open "$BROKER_HOST_PORT"; then
         jmh eventbus-external "$COMMON_JAR" 'EventBusBenchmark' -p broker=external -p consumers=1,2,4 $TIMING

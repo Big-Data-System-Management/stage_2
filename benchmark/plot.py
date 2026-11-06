@@ -147,7 +147,8 @@ def plot_eventbus(results, info, target):
 
 
 def plot_text_processing(results, info, target):
-    panels = [("tokenizer", "Tokenizer", "bookId"), ("metadata", "MetadataExtractor", "bookId")]
+    panels = [("tokenizer", "Tokenizer", "bookId"), ("metadata", "MetadataExtractor", "bookId"),
+              ("splitter", "GutenbergSplitter", "bookId")]
     data = [(results[results.experiment == name], title, key) for name, title, key in panels]
     data = [item for item in data if not item[0].empty]
     if not data:
