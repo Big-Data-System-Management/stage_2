@@ -72,8 +72,9 @@ status_ok() {
 
 listening_pid() {
     if [[ -n "${WINDIR:-}" ]]; then
-        netstat -ano | tr -d '\r' | awk -v suffix=":$1" '
-            $1 == "TCP" && substr($2, length($2) - length(suffix) + 1) == suffix && $3 ~ /:0$/ {print $NF; exit}'
+        powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort $1 -ErrorAction SilentlyContinue |
+            Where-Object { \$_.OwningProcess -gt 0 -and (Get-Process -Id \$_.OwningProcess -ErrorAction SilentlyContinue) } |
+            Select-Object -First 1 -ExpandProperty OwningProcess" | tr -d '\r'
     else
         ss -ltnpH "sport = :$1" | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1
     fi
