@@ -16,18 +16,26 @@ import org.apache.activemq.RedeliveryPolicy;
 public class EventBus implements Publisher, AutoCloseable {
 
     private static final String TOPIC_PREFIX = "VirtualTopic.";
+    private static final int DEFAULT_QUEUE_PREFETCH = 1;
 
     private final Connection connection;
     private final Session publishSession;
     private final MessageProducer producer;
 
     public EventBus(String brokerUrl, int maxRedeliveries, long redeliveryDelayMs) throws JMSException {
+        this(brokerUrl, maxRedeliveries, redeliveryDelayMs, DEFAULT_QUEUE_PREFETCH);
+    }
+
+    public EventBus(String brokerUrl, int maxRedeliveries, long redeliveryDelayMs, int queuePrefetch) throws JMSException {
         ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(brokerUrl);
+        factory.getPrefetchPolicy().setQueuePrefetch(queuePrefetch);
         RedeliveryPolicy policy = factory.getRedeliveryPolicy();
         policy.setMaximumRedeliveries(maxRedeliveries);
         policy.setInitialRedeliveryDelay(redeliveryDelayMs);
         policy.setRedeliveryDelay(redeliveryDelayMs);
         policy.setUseExponentialBackOff(redeliveryDelayMs > 0);
+        policy.setBackOffMultiplier(2);
+        factory.setNonBlockingRedelivery(true);
         connection = factory.createConnection();
         connection.start();
         publishSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
@@ -38,7 +46,8 @@ public class EventBus implements Publisher, AutoCloseable {
         return new EventBus(
                 Config.get("BROKER_URL", "tcp://localhost:61616"),
                 Config.getInt("MAX_REDELIVERIES", 5),
-                Config.getInt("REDELIVERY_DELAY_MS", 1000));
+                Config.getInt("REDELIVERY_DELAY_MS", 1000),
+                Config.getInt("QUEUE_PREFETCH", DEFAULT_QUEUE_PREFETCH));
     }
 
     @Override
