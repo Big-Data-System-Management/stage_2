@@ -1,15 +1,17 @@
 openapi: 3.0.3
 info:
   title: Indexing Service API
-  version: 0.3.0
+  version: 1.0.0
   description: >-
-    Operational, read-only API. Indexing work is triggered by BookDownloaded and IndexRebuildRequested
-    events (see events.yaml), not by HTTP.
+    Operational API. Provider: indexing-service. Consumers: operators and the validation and benchmark scripts.
+    Neither the front-end nor the other services call it. Every operation is read-only, idempotent and safe to
+    retry. Indexing work is triggered by BookDownloaded and IndexRebuildRequested
+    events (see events.yaml), not by HTTP, so there are no POST /index/update/{book_id} or POST /index/rebuild.
 servers:
   - url: http://localhost:7002
 tags:
   - name: operational
-    description: Status queries and health checks
+    description: Status queries and health checks, consumed by operators and scripts
 paths:
   /index/status:
     get:
@@ -33,24 +35,26 @@ paths:
                   last_update:
                     type: string
                     format: date-time
-                    description: Time the last book was published; absent when no book is published
+                    description: Time the last book was published; absent when no book is published. It also changes when a rebuild replaces the index
                   index_size_mb:
                     type: number
                     description: Size of the inverted index documents in MongoDB, before compression
               example:
-                books_indexed: 15
-                last_update: '2026-10-28T19:05:00.123Z'
-                index_size_mb: 1.42
+                books_indexed: 27
+                last_update: '2026-11-06T23:07:08.932Z'
+                index_size_mb: 5.708
   /status:
     get:
       tags: [operational]
       summary: Health check
+      description: Reports that the process is running; it does not check MongoDB or the broker.
       responses:
         '200':
           description: Service is running
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Status'}
+              example: {service: indexing-service, status: running}
 components:
   schemas:
     Status:
