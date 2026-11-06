@@ -14,7 +14,7 @@ import java.util.zip.GZIPInputStream;
 
 public class GutenbergSource implements BookSource {
 
-    private static final String URL_PATTERN = "https://www.gutenberg.org/cache/epub/%d/pg%d.txt";
+    private static final String URL_PATTERN = "https://gutenberg.pglaf.org/cache/epub/%d/pg%d.txt";
     private static final long MIN_DELAY_MS = 768;
     private static final long MAX_DELAY_MS = 1024;
     private static final int HTTP_TIMEOUT_SECONDS = 30;
@@ -52,7 +52,7 @@ public class GutenbergSource implements BookSource {
         String url = String.format(URL_PATTERN, bookId, bookId);
         return HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("User-Agent", "stage2-ingestion/1.0 (ULPGC Big Data course project)")
                 .timeout(Duration.ofSeconds(HTTP_TIMEOUT_SECONDS))
                 .GET()
                 .build();
