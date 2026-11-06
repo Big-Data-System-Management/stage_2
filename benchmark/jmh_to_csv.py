@@ -25,7 +25,7 @@ def to_rows(entries, args):
         params = entry.get("params", {})
         values = [value for fork in entry["primaryMetric"]["rawData"] for value in fork]
         index_size = next((params[name] for name in BOOK_PARAMS if name in params), "")
-        batch_size = args.batch_size if index_size else ""
+        batch_size = args.batch_size if index_size and args.experiment.startswith("index-") else ""
         other = {name: value for name, value in params.items() if name not in THREAD_PARAMS + BOOK_PARAMS}
         rows.append({
             "run_id": args.run_id,
@@ -41,7 +41,7 @@ def to_rows(entries, args):
             "replicas": 1,
             "users": 0,
             "xmx": args.xmx,
-            "books": int(index_size) + args.batch_size if index_size else "",
+            "books": int(index_size) + (batch_size or 0) if index_size else "",
             "index_size": index_size,
             "batch_size": batch_size,
             "params": ";".join(f"{name}={value}" for name, value in sorted(other.items())),
