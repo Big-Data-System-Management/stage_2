@@ -16,10 +16,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TimeHierarchyBookLocatorResilienceTest {
@@ -103,47 +101,6 @@ class TimeHierarchyBookLocatorResilienceTest {
 
         assertTrue(relative.matches("\\d{8}/\\d{2}"), relative);
         assertEquals(directory, root.resolve(relative));
-    }
-
-    @Test
-    void closeWritesAVersionedSnapshotThatTheNextStartReads() throws Exception {
-        writeBook("20261028", "10", 1);
-        writeBook("20261028", "11", 2);
-        TimeHierarchyBookLocator first = new TimeHierarchyBookLocator(root);
-        first.close();
-
-        List<String> lines = Files.readAllLines(root.resolve(".ingestion-index.tsv"));
-        assertEquals("ingestion-index-v1", lines.get(0));
-        assertEquals(2L, lines.stream().filter(line -> line.startsWith("B\t")).count());
-
-        TimeHierarchyBookLocator second = new TimeHierarchyBookLocator(root);
-        assertEquals(List.of(1, 2), second.list());
-    }
-
-    @Test
-    void twoInstancesSavingAtTheSameTimeLeaveAValidSnapshotAndNoLeftovers() throws Exception {
-        writeBook("20261028", "10", 1);
-        TimeHierarchyBookLocator first = new TimeHierarchyBookLocator(root);
-        TimeHierarchyBookLocator second = new TimeHierarchyBookLocator(root);
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        CountDownLatch start = new CountDownLatch(1);
-        List<Future<?>> tasks = new ArrayList<>();
-        for (TimeHierarchyBookLocator locator : List.of(first, second)) {
-            tasks.add(pool.submit(() -> {
-                start.await();
-                for (int i = 0; i < 100; i++) locator.save();
-                return null;
-            }));
-        }
-        start.countDown();
-        for (Future<?> task : tasks) task.get(30, TimeUnit.SECONDS);
-        pool.shutdown();
-
-        assertEquals("ingestion-index-v1", Files.readAllLines(root.resolve(".ingestion-index.tsv")).get(0));
-        try (Stream<Path> files = Files.list(root)) {
-            assertFalse(files.anyMatch(path -> path.getFileName().toString().endsWith(".tmp")));
-        }
-        assertEquals(List.of(1), new TimeHierarchyBookLocator(root).list());
     }
 
     @Test

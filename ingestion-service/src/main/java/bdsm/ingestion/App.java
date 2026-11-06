@@ -13,7 +13,6 @@ import bdsm.ingestion.source.LocalSource;
 import bdsm.ingestion.storage.TimeHierarchyBookLocator;
 import io.javalin.Javalin;
 
-import java.io.IOException;
 import java.nio.file.Path;
 
 public class App {
@@ -28,18 +27,9 @@ public class App {
         BookSource books = source.equals("gutenberg") ? new GutenbergSource() : new LocalSource(Path.of(source));
         EventBus events = EventBus.fromConfig();
         events.subscribe(BookRequested.class, "ingestion", workers, new IngestionHandler(datalake, locator, books));
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> shutdown(events, locator)));
+        Runtime.getRuntime().addShutdownHook(new Thread(events::close));
         Javalin app = ServiceApp.create("ingestion-service", threads);
         new IngestionController(locator).register(app);
         app.start(port);
-    }
-
-    private static void shutdown(EventBus events, TimeHierarchyBookLocator locator) {
-        events.close();
-        try {
-            locator.close();
-        } catch (IOException e) {
-            System.err.println("[Ingestion] Could not save the book index: " + e.getMessage());
-        }
     }
 }

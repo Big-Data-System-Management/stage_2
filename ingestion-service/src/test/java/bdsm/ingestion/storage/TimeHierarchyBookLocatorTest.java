@@ -7,7 +7,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,36 +61,21 @@ class TimeHierarchyBookLocatorTest {
     }
 
     @Test
-    void reloadsTheSavedIndexAndKeepsTheSameBooks() throws Exception {
-        TimeHierarchyDatalake datalake = new TimeHierarchyDatalake(root);
-        datalake.store(new Book(12, "h", "b"));
-        datalake.store(new Book(2, "h", "b"));
-        TimeHierarchyBookLocator first = new TimeHierarchyBookLocator(root);
-        first.save();
-
-        TimeHierarchyBookLocator second = new TimeHierarchyBookLocator(root);
-
-        assertTrue(Files.isRegularFile(root.resolve(".ingestion-index.tsv")));
-        assertEquals(List.of(2, 12), second.list());
-        assertEquals(first.find(2), second.find(2));
-    }
-
-    @Test
-    void catchesUpWithBooksStoredWhileTheServiceWasStopped() throws Exception {
+    void aRestartFindsBooksStoredInOldFoldersWhileTheServiceWasStopped() throws Exception {
         writeBook("20260101", "05", 1, true, true);
         writeBook("20260301", "09", 10, true, true);
         writeBook("20260301", "10", 11, true, true);
-        new TimeHierarchyBookLocator(root).save();
-        Path oldFolder = writeBook("20260101", "05", 2, true, true);
-        Files.setLastModifiedTime(oldFolder, FileTime.fromMillis(System.currentTimeMillis() + 10_000));
+        new TimeHierarchyBookLocator(root);
+        writeBook("20260101", "05", 2, true, true);
 
         TimeHierarchyBookLocator restarted = new TimeHierarchyBookLocator(root);
 
+        assertTrue(restarted.find(2).isPresent());
         assertEquals(List.of(1, 2, 10, 11), restarted.list());
     }
 
     @Test
-    void rebuildsItselfWhenTheSavedIndexIsCorrupt() throws Exception {
+    void ignoresAnOldIndexFileLeftInTheDatalakeRoot() throws Exception {
         writeBook("20261028", "10", 8, true, true);
         Files.writeString(root.resolve(".ingestion-index.tsv"), "ingestion-index-v1\nB\tnot-a-number\n");
 
@@ -101,31 +85,4 @@ class TimeHierarchyBookLocatorTest {
         assertTrue(locator.find(8).isPresent());
     }
 
-    @Test
-    void reconcileRepairsAnIndexThatMissesABookInAnOldFolder() throws Exception {
-        writeBook("20261028", "10", 1, true, true);
-        TimeHierarchyBookLocator locator = new TimeHierarchyBookLocator(root);
-        writeBook("20200101", "05", 9, true, true);
-        writeBook("20261028", "11", 2, true, true);
-        writeBook("20261028", "12", 3, true, true);
-
-        assertTrue(locator.find(9).isEmpty());
-
-        locator.reconcile();
-
-        assertTrue(locator.find(9).isPresent());
-        assertEquals(List.of(1, 2, 3, 9), locator.list());
-    }
-
-    @Test
-    void savesTheIndexWhenItIsClosed() throws Exception {
-        TimeHierarchyBookLocator locator = new TimeHierarchyBookLocator(root);
-        new TimeHierarchyDatalake(root).store(new Book(6, "Title: X", "text"));
-        assertTrue(locator.find(6).isPresent());
-
-        locator.close();
-
-        IndexSnapshot saved = new TsvIndexRepository(root).load().orElseThrow();
-        assertEquals(List.of(6), saved.entries().stream().map(BookEntry::id).toList());
-    }
 }

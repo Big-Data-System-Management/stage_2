@@ -68,30 +68,4 @@ class BookIndexTest {
         assertTrue(index.completeEntry(1).isEmpty());
         assertFalse(index.folder("20261028/10").orElseThrow().isUpToDate(7L));
     }
-
-    @Test
-    void countsOnlyRealChangesSinceTheLastSnapshot() {
-        index.replaceFolder("20261028/10", 1L, Map.of(1, COMPLETE));
-        assertEquals(1, index.pendingChanges());
-
-        index.replaceFolder("20261028/10", 2L, Map.of(1, COMPLETE));
-        assertEquals(1, index.pendingChanges());
-
-        index.snapshot();
-        assertEquals(0, index.pendingChanges());
-    }
-
-    @Test
-    void restoresExactlyWhatItSnapshotted() {
-        index.replaceFolder("20261028/10", 1L, Map.of(1, COMPLETE, 2, BookFiles.HEADER_ONLY));
-        index.replaceFolder("20261028/11", 2L, Map.of(3, COMPLETE));
-        IndexSnapshot snapshot = index.snapshot();
-        BookIndex restored = new BookIndex();
-
-        restored.restore(snapshot);
-
-        assertEquals(List.of(1, 3), restored.completeIds());
-        assertEquals(snapshot, restored.snapshot());
-        assertEquals(0, restored.pendingChanges());
-    }
 }

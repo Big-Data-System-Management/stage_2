@@ -69,16 +69,12 @@ class IngestionPipelineTest {
     }
 
     @Test
-    void aFreshDatalakeScanFindsEveryStoredBookEvenWithTheIndexSnapshotInTheRoot() throws Exception {
+    void anotherServiceFindsEveryStoredBookInTheDatalake() throws Exception {
         Path root = workspace.resolve("datalake");
         CapturingPublisher publisher = new CapturingPublisher();
-        TimeHierarchyDatalake datalake = new TimeHierarchyDatalake(root);
-        try (TimeHierarchyBookLocator locator = new TimeHierarchyBookLocator(root)) {
-            IngestionHandler handler = new IngestionHandler(datalake, locator, new LocalSource(source()));
-            for (int id = 1; id <= 3; id++) handler.handle(new BookRequested(id), publisher);
-        }
+        IngestionHandler handler = handler(root, source());
+        for (int id = 1; id <= 3; id++) handler.handle(new BookRequested(id), publisher);
 
-        assertTrue(Files.isRegularFile(root.resolve(".ingestion-index.tsv")));
         TimeHierarchyDatalake indexingView = new TimeHierarchyDatalake(root);
         assertEquals(List.of(1, 2, 3), new ArrayList<>(indexingView.bookIds()));
     }
