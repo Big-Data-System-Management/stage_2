@@ -1,7 +1,7 @@
 asyncapi: 2.6.0
 info:
   title: Search Engine Events
-  version: 0.1.0
+  version: 1.0.0
   description: |
     Choreography contract between the services. Every event is published to an ActiveMQ virtual topic
     (VirtualTopic.<Event>). Each consuming service reads its own queue Consumer.<group>.VirtualTopic.<Event>,
@@ -27,7 +27,10 @@ info:
     its redelivery, the consumer keeps processing the next messages. After the last retry the message is moved
     to the dead-letter queue ActiveMQ.DLQ.
 
-    Duplicates: delivery is at least once, so every handler must be idempotent (draft rules per channel below).
+    Duplicates: delivery is at least once, so every handler is idempotent (rules per channel below).
+
+    Completion: publishing an event only means that the work was accepted. Each channel below states how the
+    producer observes that the work finished or failed. Messages that run out of retries stay in ActiveMQ.DLQ.
 
     Ordering: no ordering is assumed between different books.
 servers:
@@ -40,6 +43,13 @@ channels:
     description: |
       A book should be ingested. Producer: feeder. Consumer group: ingestion (queue Consumer.ingestion.VirtualTopic.BookRequested).
       Duplicates: a book already stored in the datalake is not downloaded again; BookDownloaded is published again.
+      Two replicas may still store the same book at the same time: each file is replaced atomically, and the
+      book locator keeps one copy if they end up in different folders.
+      Failures: a book that does not exist in the source or has no Project Gutenberg markers is logged and
+      acknowledged, without retries or events. Any other error (network, other HTTP codes, disk) rolls the event back
+      and it is redelivered.
+      Completion: BookDownloaded is published, and GET /ingest/status/{book_id} returns available. A book that was
+      discarded stays missing.
     subscribe:
       operationId: onBookRequested
       message: {$ref: '#/components/messages/BookRequested'}
@@ -53,6 +63,7 @@ channels:
       Two copies processed at the same time do not duplicate postings or metadata (upserts and $addToSet).
       Failures: if the book files cannot be read or MongoDB fails, the event is rolled back and redelivered;
       postings written before the failure are not visible to search because the book is not published yet.
+      Completion: BookIndexed is published, and GET /books/{book_id} on the search service returns the book.
     subscribe:
       operationId: onBookDownloaded
       message: {$ref: '#/components/messages/BookDownloaded'}
@@ -69,9 +80,13 @@ channels:
       Consumer group: indexing (queue Consumer.indexing.VirtualTopic.IndexRebuildRequested).
       Processing: the index and the metadata are built in the staging collections inverted_index_rebuild and
       books_rebuild, which then replace inverted_index and books. Search keeps reading the previous index until
-      the replacement. Books stored in the datalake during the rebuild are indexed afterwards.
+      the replacement. The two collections are replaced one after the other, so a search in that instant can
+      combine the new index with the previous metadata. Books stored in the datalake during the rebuild are indexed
+      afterwards.
       Failures: the event is redelivered and the rebuild starts again from empty staging collections;
       the previous index stays in use.
+      Completion: no event is published. last_update in GET /index/status changes when the replacement happens, and
+      the indexing log reports the number of books rebuilt.
     subscribe:
       operationId: onIndexRebuildRequested
       message: {$ref: '#/components/messages/IndexRebuildRequested'}

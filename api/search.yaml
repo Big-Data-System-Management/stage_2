@@ -60,7 +60,7 @@ paths:
           in: query
           description: Exact publication year. Blank means no filter.
           schema: {type: integer}
-          example: 1865
+          example: 1928
         - name: offset
           in: query
           description: Number of matching books to skip.
@@ -85,11 +85,11 @@ paths:
                     offset: 0
                     limit: 2
                     results:
-                      - {book_id: 11, title: "Alice's Adventures in Wonderland", author: Lewis Carroll, language: en, year: 1865}
-                      - {book_id: 12, title: Through the Looking-Glass, author: Lewis Carroll, language: en, year: 1871}
+                      - {book_id: 11, title: "Alice's Adventures in Wonderland", author: Lewis Carroll, language: en}
+                      - {book_id: 12, title: Through the Looking-Glass, author: Lewis Carroll, language: en}
                 noMatches:
-                  summary: GET /search?q=dragon
-                  value: {query: dragon, filters: {}, total: 0, offset: 0, limit: 20, results: []}
+                  summary: GET /search?q=dragonzzz
+                  value: {query: dragonzzz, filters: {}, total: 0, offset: 0, limit: 20, results: []}
         '400':
           description: |
             Invalid parameters: missing or blank `q`; `year`, `offset` or `limit` not an integer;
@@ -110,7 +110,7 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/FilterValues'}
-              example: {languages: [en, es, fr], years: [1605, 1865, 1871]}
+              example: {languages: [de, en, es, fi], years: [1903, 1905, 1906, 1908, 1909, 1926, 1927, 1928, 1931, 1957]}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /books/{book_id}:
     get:
@@ -121,14 +121,14 @@ paths:
           in: path
           required: true
           schema: {type: integer}
-          example: 11
+          example: 74750
       responses:
         '200':
           description: Book metadata
           content:
             application/json:
               schema: {$ref: '#/components/schemas/BookMetadata'}
-              example: {book_id: 11, title: "Alice's Adventures in Wonderland", author: Lewis Carroll, language: en, year: 1865}
+              example: {book_id: 74750, title: Coming of age in Samoa A psychological study of primitive youth for western civilisation, author: Margaret Mead, language: en, year: 1928}
         '400':
           description: '`book_id` is not an integer'
           content:
